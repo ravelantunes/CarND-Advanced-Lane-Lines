@@ -24,7 +24,10 @@ Ex2:
 
 I used a total of 20 chessboard images. For each one, I used opencv functions like findChessboardCorners to find all the identified corners of the 9x6 chessboard corners existent on each image. This happens on the 2nd and 3rd cell of the python notebook.
 
-Once I had all the corners identified for each image, I used calibrateCamera camera function to get values from the resulted calibration. I used those calibration values as arguments for the opencv undistort function, which provided me the image with corrected camera distortion.
+Once I had all the corners identified for each image, I used calibrateCamera camera function to get values from the resulted calibration. I used those calibration values as arguments for the opencv undistort function, which provided me the image with corrected camera distortion. See example of images before and after distortion correction:
+
+![Before Processing](writeup_images/with-distortion.jpg)
+![Before Processing](writeup_images/without-distortion.jpg)
 
 ## Warp to Birdseye View
 
