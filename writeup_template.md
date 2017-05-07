@@ -1,10 +1,4 @@
-## Writeup Template
-
-### You can use this file as a template for your writeup if you want to submit it as a markdown file, but feel free to use some other method and submit a pdf if you prefer.
-
----
-
-**Advanced Lane Finding Project**
+# Advanced Lane Finding Project
 
 The goals / steps of this project are the following:
 
@@ -17,111 +11,76 @@ The goals / steps of this project are the following:
 * Warp the detected lane boundaries back onto the original image.
 * Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
 
-[//]: # (Image References)
 
-[image1]: ./examples/undistort_output.png "Undistorted"
-[image2]: ./test_images/test1.jpg "Road Transformed"
-[image3]: ./examples/binary_combo_example.jpg "Binary Example"
-[image4]: ./examples/warped_straight_lines.jpg "Warp Example"
-[image5]: ./examples/color_fit_lines.jpg "Fit Visual"
-[image6]: ./examples/example_output.jpg "Output"
-[video1]: ./project_video.mp4 "Video"
+## Camera Calibration
 
-## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
+My pipeline consisted of the following steps:
 
-### Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
+First step was to calibrate the camera and undistort the image. To do that, I used multiple chessboard images like the following example:
 
----
+Ex1:
+![alt text](camera_cal/calibration1.jpg)
 
-### Writeup / README
+Ex2:
+![alt text](camera_cal/calibration2.jpg)
 
-#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
+I used a total of 20 chessboard images. For each one, I used opencv functions like findChessboardCorners to find all the identified corners of the 9x6 chessboard corners existent on each image.
 
-You're reading it!
+Once I had all the corners identified for each image, I used calibrateCamera camera function to get values from the resulted calibration. I used those calibration values as arguments for the opencv undistort function, which provided me the image with corrected camera distortion.
 
-### Camera Calibration
+## Warp to Birdseye View
 
-#### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
+The next step consisted of determining a transform matrix that I could use to transform the original image (in driver's perspective) into a birdseye view perspective, as with with birdseye we can better determine the curvature of the road. To do this, I used the image that looked to be the most straight as possible. I then identified the points in left and right sides of the lane which the road starts appearing the closest to the car, and their points farther from the car in which they are still visible. After that, I identified the expected coordinates in an image that those points would appear with birdseye. With those sets of points, I used opencv getPerspectiveTransform transform to get the transform matrix, which I could use later with the function warpPerspective. I also created an inverse perspective based on that matrix, so I could use later to perform the inversed process from birdseye to driver's perspective.
 
-The code for this step is contained in the first code cell of the IPython notebook located in "./examples/example.ipynb" (or in lines # through # of the file called `some_file.py`).  
+### Before Transform
+![Driver Perspective](writeup_images/driver-perspective.jpg)
 
-I start by preparing "object points", which will be the (x, y, z) coordinates of the chessboard corners in the world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image.  Thus, `objp` is just a replicated array of coordinates, and `objpoints` will be appended with a copy of it every time I successfully detect all chessboard corners in a test image.  `imgpoints` will be appended with the (x, y) pixel position of each of the corners in the image plane with each successful chessboard detection.  
+### After Transform
+![Driver Perspective](writeup_images/birdseye-perspective.jpg)
 
-I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.  I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained this result: 
+Once I had a birdseye image, I created a function that performed different kind of filter on this image to detect the lines. That function performed different kinds of sobel operations and color thresholding, and each operation would return an image with binary outputs. The operations were the following:
 
-![alt text][image1]
+- An operation that would return a binary image of all pixels that matched both vertical and horizontal sobels, or both magnitude and directional thresholds
+- An operation that would return a binary of all the pixels in the H layer of an HSV color space that were between the thresholds of 100 and 255
+- An operation that would return a binary of all the pixels in the B layer of an RGB color space that were between the thresholds of 0 and 145
 
-### Pipeline (single images)
+I would then filter the result of those 3 operations to only include pixels that were true in at least 2 of those operations. See example below:
 
-#### 1. Provide an example of a distortion-corrected image.
+![Before Processing](writeup_images/before-process.jpg)
+![Before Processing](writeup_images/after-process.jpg)
 
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
-![alt text][image2]
+Based on that filtered image, I would perform calculations to determine the position of the left and right lines. The first step was to do a histogram calculating the number of occurrences of pixels for each column in the image matrix. I perform that operation on the bottom half of the image. Based on that histogram, if I look for the column with highest value on the left half side of the image, that's likely to be the bottom of the left lane. The same for the right lane.
 
-#### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
+Once the base is identified, for each lane (left and right) I divide the image in 10 windows vertically. For each window, I identify the pixels that are within pixels to the left or right of the position of the base identified in the histogram. Once all those pixels on each window are identified, I get the best polynomial fit for all those pixels identified. The polynomial should represent the curvate of the lane. If this step is happening after a frame that has successfully identified lanes, I create a mask based on the previous identified polynomial, with a small margin. That way, for next window searches, I can restrict the margin in which it's looking for pixels. If it fails to find enough pixels within that restricted margin, I fall back into the full window search. Here's an example of an image with and without the mask:
 
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+### Without Mask:
 
-![alt text][image3]
+![Before Processing](writeup_images/after-process.jpg)
 
-#### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+### With Mask:
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
+![Before Processing](writeup_images/filter-with-mask.jpg)
 
-```python
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
-```
+### Mask on Image Before Filters
 
-This resulted in the following source and destination points:
+![Before Processing](writeup_images/original-with-mask.jpg)
 
-| Source        | Destination   | 
-|:-------------:|:-------------:| 
-| 585, 460      | 320, 0        | 
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
+Once both left and right polynomials are estimated, I create a polygon to fill the space between both polynomials, with each polinomial drawing from the base of each lane to about half of the image.
 
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
+At this point, I have a green polygon that can be overlayed over the road to identify the lane in front of the car, but the perspective is still of a bird eyes view. I then calculate a matrix to calculate the inverse of my previous warp matrix to transform my polygon into the same perspective of the original camera image.
 
-![alt text][image4]
+#### Final result:
+![Before Processing](writeup_images/final.jpg)
 
-#### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+All this process happens for each frame of the video, that is called from this method.
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
-
-![alt text][image5]
-
-#### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
-
-I did this in lines # through # in my code in `my_other_file.py`
-
-#### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
-
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
-
-![alt text][image6]
-
----
-
-### Pipeline (video)
-
-#### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
-
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result](./final_output.mp4)
 
 ---
 
 ### Discussion
 
-#### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+One of my challenges of my current approach is that it is not optimized enough to keep up with the frame rate of a video. I use a 2013 MacBook Pro and the frames/second that it can process is much lower than the number of frames the video contain.
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+For sake of simplicity, my algorithm only keeps track of the previous identified polynomials. I could have better results if I kept track of additional past measurements and used a more robust algorithm like Kalman filters instead of just a mean calculation between current and previous polynomials.
+
